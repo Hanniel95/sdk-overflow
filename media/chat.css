@@ -881,9 +881,48 @@ button.pal.on .pal-name { color: var(--brand); }
   color: var(--vscode-editorWidget-foreground, var(--fg));
   box-shadow: 0 12px 32px rgba(0, 0, 0, .35);
 }
-.pop.model { left: 0; width: min(440px, calc(100vw - 24px)); }
-.pop.mode { left: auto; right: 0; width: min(380px, calc(100vw - 24px)); }
+/* Menus larges (modèle, actions /) : toute la largeur de la saisie, juste au-dessus. */
+.pop.wide { left: 0; right: 0; width: auto; max-width: none; }
+/* Menus ancrés (+, modes) : bottom/left/right posés en JS sur le bouton qui les ouvre. */
+.pop.anchored { width: max-content; max-width: min(400px, calc(100vw - 24px)); }
+.pop.anchored.mode { width: min(380px, calc(100vw - 24px)); }
 .pop.head { top: calc(100% + 4px); bottom: auto; left: auto; right: 8px; width: min(420px, calc(100vw - 24px)); }
+.pop.actions { display: flex; flex-direction: column; overflow: hidden; max-height: min(460px, 62vh); padding: 0; }
+.menu-filter { display: block; padding: 6px; border-bottom: 1px solid var(--border-soft); }
+.menu-filter input {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--chip-bg);
+  color: var(--fg);
+}
+.menu-filter input:focus { border-color: var(--vscode-focusBorder); }
+.action-list { flex: 1; min-height: 0; overflow: auto; padding: 4px 6px 6px; }
+.menu-section { padding: 8px 8px 4px; font-size: 12px; color: var(--muted); }
+.act {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 6px;
+  text-align: left;
+}
+.act:hover, .act:focus-visible { background: var(--vscode-list-hoverBackground); outline: none; }
+.act-label { flex: none; }
+.act.mono-label .act-label { font-family: var(--mono); font-size: 12px; }
+.act-meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--muted);
+  font-size: 12px;
+}
+.act.mono-label .act-meta { text-align: left; }
 .menu-head {
   display: flex;
   align-items: center;

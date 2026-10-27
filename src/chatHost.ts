@@ -1,7 +1,7 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { readSession } from "./catalog";
-import { historyEvents } from "./history";
+import { exportMarkdown, historyEvents } from "./history";
 import { beforeStore } from "./snapshots";
 import {
   AgentSession,
@@ -255,6 +255,9 @@ export class ChatHost {
         break;
       case "dropUris":
         await this.handleDroppedUris((msg.uris ?? []) as string[]);
+        break;
+      case "export":
+        await this.exportConversation();
         break;
       case "searchFiles":
         await this.searchFiles(String(msg.query ?? ""));
@@ -512,6 +515,24 @@ export class ChatHost {
       const pos = new vscode.Position(line - 1, 0);
       editor.selection = new vscode.Selection(pos, pos);
       editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+    }
+  }
+
+  /** Ouvre la conversation enregistrée en Markdown dans un nouvel onglet (non sauvegardé). */
+  private async exportConversation(): Promise<void> {
+    if (!this.resumeId) {
+      void vscode.window.showInformationMessage("Rien à exporter : cette session n'a pas encore de messages.");
+      return;
+    }
+    try {
+      const messages = await readSession(this.cwd, this.resumeId);
+      const doc = await vscode.workspace.openTextDocument({
+        language: "markdown",
+        content: exportMarkdown(this.panel.title, messages),
+      });
+      await vscode.window.showTextDocument(doc, { preview: false });
+    } catch (err) {
+      void vscode.window.showErrorMessage(`Export impossible : ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

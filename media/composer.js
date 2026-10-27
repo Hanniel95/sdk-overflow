@@ -49,6 +49,11 @@
     { value: "claude-haiku-5-5", displayName: "Haiku", description: "Haiku 5.5 · Le plus rapide" },
   ];
   const HEAD_MENUS = new Set(["sessions"]);
+  /**
+   * Placement des menus de la saisie, comme dans Claude Code : les menus « larges » couvrent toute
+   * la largeur de la zone, au-dessus d'elle ; les autres s'ouvrent juste au-dessus de leur bouton.
+   */
+  const ANCHORS = { plus: { button: "plus", side: "left" }, mode: { button: "modebtn", side: "right" } };
   const RING = 2 * Math.PI * 7;
 
   let vscode;
@@ -57,6 +62,7 @@
   let agents = [];
   let sessions = [];
   let sessionQuery = "";
+  let actionQuery = "";
   let showArchived = false;
   let model = "sonnet";
   let mode = "default";
@@ -91,11 +97,9 @@
     $("modebtn").addEventListener("click", () => toggleMenu("mode"));
     $("webchip").addEventListener("click", () => setWeb(false));
     $("slash").addEventListener("click", () => {
-      closeMenu();
-      if (!input.value.startsWith("/")) input.value = `/${input.value}`;
-      input.focus();
-      input.setSelectionRange(1, 1);
-      refreshPalette();
+      closePalette();
+      actionQuery = "";
+      toggleMenu("actions");
     });
     $("history").addEventListener("click", () => {
       vscode.postMessage({ type: "listSessions" });
@@ -104,6 +108,10 @@
     });
     document.addEventListener("mousedown", (event) => {
       if (!event.target.closest(".composer, .top")) closeMenu();
+    });
+    window.addEventListener("resize", () => {
+      const anchor = ANCHORS[openMenu];
+      if (anchor) placeAt($("pop"), $(anchor.button), anchor.side);
     });
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && event.ctrlKey) {
@@ -336,14 +344,175 @@
       el.hidden = true;
       el.innerHTML = "";
     }
+    for (const prop of ["left", "right", "bottom"]) pop.style[prop] = "";
     if (!openMenu) return;
     const target = HEAD_MENUS.has(openMenu) ? head : pop;
-    target.className = `pop ${HEAD_MENUS.has(openMenu) ? "head" : ""} ${openMenu}`;
+    const anchor = ANCHORS[openMenu];
+    target.className = `pop ${HEAD_MENUS.has(openMenu) ? "head" : anchor ? "anchored" : "wide"} ${openMenu}`;
     target.hidden = false;
+    if (anchor) placeAt(pop, $(anchor.button), anchor.side);
     if (openMenu === "plus") renderPlus(target);
     else if (openMenu === "model") renderModels(target);
     else if (openMenu === "mode") renderModes(target);
+    else if (openMenu === "actions") renderActions(target);
     else renderSessions(target);
+  }
+
+  /** Bas du menu juste au-dessus du bouton, bord aligné sur le bouton (à gauche ou à droite). */
+  function placeAt(pop, button, side) {
+    const box = $("composer").getBoundingClientRect();
+    const btn = button.getBoundingClientRect();
+    pop.style.bottom = `${Math.round(box.bottom - btn.top + 6)}px`;
+    if (side === "left") {
+      pop.style.left = `${Math.round(btn.left - box.left)}px`;
+      pop.style.right = "auto";
+    } else {
+      pop.style.right = `${Math.round(box.right - btn.right)}px`;
+      pop.style.left = "auto";
+    }
+  }
+
+  // ---------- menu d'actions (bouton /) ----------
+
+  function shortModelName() {
+    const found = currentModel();
+    return found ? found.displayName : modelLabel();
+  }
+
+  function actionSections() {
+    const input = $("input");
+    const sections = [
+      {
+        title: "Contexte",
+        items: [
+          { label: "Joindre un fichier…", run: () => vscode.postMessage({ type: "pickImages" }) },
+          {
+            label: "Mentionner un fichier du projet…",
+            run: () => {
+              input.value = `${input.value}${input.value && !input.value.endsWith(" ") ? " " : ""}@`;
+              input.focus();
+              refreshPalette();
+            },
+          },
+          { label: "Vider la conversation", run: () => vscode.postMessage({ type: "clear" }) },
+          { label: "Compacter la conversation", run: () => sendCommand("/compact") },
+          { label: "Exporter la conversation", run: () => vscode.postMessage({ type: "export" }) },
+        ],
+      },
+      {
+        title: "Modèle",
+        items: [
+          { label: "Changer de modèle…", meta: shortModelName(), keep: true, run: () => toggleMenu("model") },
+          { label: "Changer de mode…", meta: currentMode().pill, keep: true, run: () => toggleMenu("mode") },
+          { effort: true, label: "Effort" },
+        ],
+      },
+      {
+        title: "Compte",
+        items: [
+          { label: account.hasKey ? "Changer la clé API…" : "Ajouter la clé API…", run: () => vscode.postMessage({ type: "setKey" }) },
+          { label: "Remettre à zéro le compteur de dépense", meta: formatUsd(account.spent), run: () => vscode.postMessage({ type: "resetSpent" }) },
+          { label: "Nouvelle session", run: () => vscode.postMessage({ type: "newSession" }) },
+        ],
+      },
+      {
+        title: "Commandes",
+        items: commands.map((cmd) => ({
+          label: `/${cmd.name}`,
+          meta: cmd.description,
+          mono: true,
+          run: () => {
+            input.value = `/${cmd.name} `;
+            input.focus();
+            paintSend();
+          },
+        })),
+      },
+    ];
+    return sections;
+  }
+
+  function sendCommand(text) {
+    ui.stick(true);
+    ui.userMessage(text, [], Date.now());
+    vscode.postMessage({ type: "send", text, images: [] });
+    if (!busy) setBusy(true);
+  }
+
+  function renderActions(pop) {
+    const search = document.createElement("label");
+    search.className = "menu-filter";
+    search.innerHTML = `<input id="action-q" type="text" placeholder="Filtrer les actions…" autocomplete="off">`;
+    pop.appendChild(search);
+    const field = search.querySelector("input");
+    field.value = actionQuery;
+    const body = document.createElement("div");
+    body.className = "action-list";
+    pop.appendChild(body);
+    const paint = () => {
+      body.innerHTML = "";
+      const q = actionQuery.trim().toLowerCase();
+      let first = true;
+      for (const section of actionSections()) {
+        const items = section.items.filter((item) =>
+          !q || `${item.label} ${item.meta || ""}`.toLowerCase().includes(q));
+        if (!items.length) continue;
+        if (!first) divider(body);
+        first = false;
+        const title = document.createElement("div");
+        title.className = "menu-section";
+        title.textContent = section.title;
+        body.appendChild(title);
+        for (const item of items) {
+          if (item.effort) {
+            effortSlider(body);
+            continue;
+          }
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `act${item.mono ? " mono-label" : ""}`;
+          btn.innerHTML = `<span class="act-label">${ui.escapeHtml(item.label)}</span>` +
+            (item.meta ? `<span class="act-meta">${ui.escapeHtml(item.meta)}</span>` : "");
+          btn.addEventListener("click", () => {
+            if (!item.keep) closeMenu();
+            item.run();
+          });
+          body.appendChild(btn);
+        }
+      }
+      if (first) {
+        const empty = document.createElement("div");
+        empty.className = "menu-empty";
+        empty.textContent = "Aucune action ne correspond.";
+        body.appendChild(empty);
+      }
+    };
+    field.addEventListener("input", () => {
+      actionQuery = field.value;
+      paint();
+    });
+    field.addEventListener("keydown", (event) => {
+      const items = [...body.querySelectorAll(".act")];
+      if (event.key === "Enter") {
+        event.preventDefault();
+        items[0]?.click();
+      } else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        items[0]?.focus();
+      }
+    });
+    body.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      const items = [...body.querySelectorAll(".act")];
+      const index = items.indexOf(document.activeElement);
+      if (index < 0) return;
+      event.preventDefault();
+      const next = index + (event.key === "ArrowDown" ? 1 : -1);
+      if (next < 0) field.focus();
+      else items[Math.min(next, items.length - 1)].focus();
+    });
+    paint();
+    setTimeout(() => field.focus(), 0);
   }
 
   function menuHead(parent, title, hint) {
@@ -455,7 +624,6 @@
         },
       });
     }
-    divider(pop);
     effortSlider(pop);
   }
 

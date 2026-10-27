@@ -55,6 +55,30 @@ export function historyEvents(messages: SessionMessage[]): UiEvent[] {
   return events;
 }
 
+/** Conversation complète en Markdown : messages, réponses et outils appelés (sans les sous-agents). */
+export function exportMarkdown(title: string, messages: SessionMessage[]): string {
+  const parts: string[] = [`# ${title}`, ""];
+  for (const msg of messages) {
+    if (msg.type === "system" || msg.parent_tool_use_id) continue;
+    const content = asRecord(msg.message)?.content;
+    const blocks = typeof content === "string" ? [{ type: "text", text: content }] : Array.isArray(content) ? content : [];
+    for (const raw of blocks) {
+      const item = asRecord(raw);
+      if (!item) continue;
+      if (item.type === "text" && typeof item.text === "string" && item.text.trim()) {
+        parts.push(msg.type === "user" ? `## Toi\n\n${item.text.trim()}` : item.text.trim(), "");
+      } else if (item.type === "tool_use" && typeof item.name === "string") {
+        const input = asRecord(item.input) ?? {};
+        const arg = ["description", "command", "file_path", "pattern", "query", "url"]
+          .map((key) => input[key])
+          .find((value): value is string => typeof value === "string" && value.trim() !== "");
+        parts.push(`> **${item.name}**${arg ? ` · \`${arg.split("\n")[0].slice(0, 160)}\`` : ""}`, "");
+      }
+    }
+  }
+  return parts.join("\n");
+}
+
 function userEvents(content: unknown): UiEvent[] {
   if (typeof content === "string") {
     const text = content.trim();
