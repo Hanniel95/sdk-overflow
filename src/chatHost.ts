@@ -29,6 +29,8 @@ const MAX_IMAGE_BYTES = 3.75 * 1024 * 1024;
 const MODES: PermMode[] = ["default", "acceptEdits", "plan", "auto"];
 const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh", "max"];
 const TAIL = 200;
+/** Ajouté au message quand « Rechercher sur le web » est activé dans le menu + de la saisie. */
+const WEB_HINT = "(Recherche web activée : utilise WebSearch et WebFetch dès que des informations à jour ou externes sont utiles.)";
 
 export interface ChatHooks {
   onChanged(): void;
@@ -38,6 +40,7 @@ export interface ChatHooks {
   promptKey(): void;
   clearKey(): void;
   newSession(): void;
+  unfocus(): void;
   listSessions(): void;
   openSession(id: string): void;
 }
@@ -113,6 +116,11 @@ export class ChatHost {
     return new ChatHost(context, panel, cwd, resumeId, hooks);
   }
 
+  focusInput(): void {
+    this.reveal();
+    this.post({ type: "focus" });
+  }
+
   reveal(): void {
     this.panel.reveal(vscode.ViewColumn.Active);
     this.hooks.onFocus(this);
@@ -176,7 +184,7 @@ export class ChatHost {
         await this.onReady();
         break;
       case "send":
-        await this.send(String(msg.text ?? ""), (msg.images ?? []) as ImageAttachment[]);
+        await this.send(String(msg.text ?? ""), (msg.images ?? []) as ImageAttachment[], msg.web === true);
         break;
       case "stop":
         await this.session?.interrupt();
@@ -237,6 +245,10 @@ export class ChatHost {
       case "resetSpent":
         await this.context.globalState.update(SPENT_KEY, 0);
         await this.pushState();
+        this.hooks.onChanged();
+        break;
+      case "unfocus":
+        this.hooks.unfocus();
         break;
       case "pickImages":
         await this.pickImages();
@@ -316,7 +328,7 @@ export class ChatHost {
     });
   }
 
-  private async send(text: string, images: ImageAttachment[]): Promise<void> {
+  private async send(text: string, images: ImageAttachment[], web = false): Promise<void> {
     this.dirty = true;
     this.touched = Date.now();
     this.retitle(text);
@@ -359,7 +371,7 @@ export class ChatHost {
         return;
       }
     }
-    this.session.send(text, images);
+    this.session.send(web && text ? `${text}\n\n${WEB_HINT}` : text, images);
   }
 
   private retitle(text: string): void {
@@ -547,8 +559,8 @@ export class ChatHost {
   private async pickImages(): Promise<void> {
     const uris = await vscode.window.showOpenDialog({
       canSelectMany: true,
-      filters: { Images: ["png", "jpg", "jpeg", "gif", "webp"] },
       defaultUri: vscode.Uri.file(this.cwd),
+      openLabel: "Joindre",
     });
     if (uris?.length) await this.attachUris(uris);
   }
@@ -587,7 +599,7 @@ export class ChatHost {
       });
     }
     if (images.length) this.post({ type: "attached", images });
-    if (mentions.length) this.post({ type: "insert", text: `${mentions.map(mentionText).join(" ")} ` });
+    if (mentions.length) this.post({ type: "insert", inline: true, text: `${mentions.map(mentionText).join(" ")} ` });
   }
 
   private html(webview: vscode.Webview): string {
@@ -609,10 +621,8 @@ export class ChatHost {
 <body>
   <header class="top">
     <h1 id="title">${esc(this.panel.title)}</h1>
-    <span id="cost" class="cost"></span>
-    <button id="newbtn" class="icon" type="button" title="Nouvelle session">${ICONS.plus}</button>
     <button id="history" class="icon" type="button" title="Sessions">${ICONS.history}</button>
-    <button id="more" class="icon" type="button" title="Plus d'options">${ICONS.more}</button>
+    <button id="newbtn" class="icon" type="button" title="Nouvelle session">${ICONS.compose}</button>
     <div id="headpop" class="pop head" hidden></div>
   </header>
   <div class="stage">
@@ -629,20 +639,23 @@ export class ChatHost {
     <div class="composer" id="composer">
       <div id="palette" class="palette" hidden></div>
       <div id="pop" class="pop" hidden></div>
+      <div id="drophint" class="drophint" hidden>Dépose ici · depuis l'explorateur de Cursor, maintiens Maj</div>
       <div id="attachments" class="attachments"></div>
-      <textarea id="input" rows="1" placeholder="Demande quelque chose à l'agent…  (/ commandes, @ fichiers)"></textarea>
+      <textarea id="input" rows="1" placeholder="Ctrl+Échap pour entrer dans la saisie ou en sortir"></textarea>
       <div class="crow">
         <button id="plus" class="icon" type="button" title="Joindre">${ICONS.plus}</button>
-        <button id="modebtn" class="pill mode" type="button" title="Mode (Maj+Tab)">Manuel</button>
-        <button id="slash" class="icon mono" type="button" title="Commandes">/</button>
+        <button id="slash" class="icon" type="button" title="Commandes">${ICONS.slash}</button>
+        <span id="ring" class="ring" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><circle class="ring-bg" cx="10" cy="10" r="7"></circle><circle id="ring-fill" class="ring-fill" cx="10" cy="10" r="7"></circle></svg></span>
+        <button id="modelbtn" class="modelpill" type="button" title="Modèle et effort"><span class="mname">Sonnet 5.5</span><span class="meffort">High</span></button>
+        <span id="webchip" class="webchip" hidden>${ICONS.globe}<span>Web</span></span>
         <span class="spacer"></span>
-        <button id="modelbtn" class="pill" type="button">Sonnet 5.5 · High</button>
-        <span id="ring" class="ring" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><circle class="ring-bg" cx="10" cy="10" r="7"></circle><circle id="ring-fill" class="ring-fill" cx="10" cy="10" r="7"></circle></svg><span id="ring-text"></span></span>
-        <button id="stop" class="stopbtn" type="button" title="Arrêter (Échap)" hidden>${ICONS.stop}</button>
+        <button id="modebtn" class="modebtn" type="button" title="Mode (Maj+Tab)"></button>
+        <button id="stop" class="sendbtn" type="button" title="Arrêter (Échap)" hidden>${ICONS.stop}</button>
         <button id="send" class="sendbtn" type="button" title="Envoyer (Entrée)">${ICONS.send}</button>
       </div>
     </div>
   </footer>
+  <div id="lightbox" class="lightbox" hidden><img alt=""><span id="lightbox-name" class="lightbox-name"></span></div>
   ${script("markdown.js")}
   ${script("tools.js")}
   ${script("transcript.js")}
@@ -656,11 +669,13 @@ export class ChatHost {
 }
 
 const ICONS = {
-  plus: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>`,
-  history: `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.3"/></svg>`,
-  more: `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.5" cy="8" r=".9"/><circle cx="8" cy="8" r=".9"/><circle cx="12.5" cy="8" r=".9"/></svg>`,
-  send: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>`,
-  stop: `<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>`,
+  plus: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>`,
+  slash: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m14 8-4 8"/></svg>`,
+  history: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>`,
+  compose: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 12A8.5 8.5 0 0 1 8.2 19.6L3.5 20.5l.9-4.7A8.5 8.5 0 1 1 20.5 12z"/><path d="M12 8.5v7M8.5 12h7"/></svg>`,
+  globe: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.3 2.4 3.5 5.2 3.5 8.5s-1.2 6.1-3.5 8.5c-2.3-2.4-3.5-5.2-3.5-8.5S9.7 5.9 12 3.5z"/></svg>`,
+  send: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>`,
+  stop: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect class="solid" x="7" y="7" width="10" height="10" rx="2"/></svg>`,
 };
 
 function isEffort(value: unknown): value is Effort {

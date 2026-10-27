@@ -297,9 +297,13 @@
     return el;
   }
 
-  function userMessage(text, images) {
+  function userMessage(text, images, time) {
     const thumbs = (images || []).map((img) =>
-      `<img class="thumb" src="data:${img.mediaType};base64,${img.data}" alt="${esc(img.name)}">`).join("");
+      `<img class="thumb" src="data:${img.mediaType};base64,${img.data}" alt="${esc(img.name)}" title="Aperçu de ${esc(img.name)}">`).join("");
+    if (time) {
+      const stamp = new Date(time).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+      append("user-time", esc(stamp));
+    }
     append("user-msg", (thumbs ? `<div class="thumbs">${thumbs}</div>` : "") + `<div class="user-text">${esc(text || "")}</div>`);
     stick = true;
     jump.hidden = true;

@@ -2,7 +2,10 @@
   "name": "sdk-overflow",
   "displayName": "SDK Overflow (Claude Agent SDK)",
   "icon": "media/logo.png",
-  "repository": { "type": "git", "url": "https://github.com/Hanniel95/sdk-overflow" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Hanniel95/sdk-overflow"
+  },
   "description": "Agent de code dans Cursor / VS Code, propulsé par le Claude Agent SDK et une clé API de la Claude Console.",
   "version": "0.1.4",
   "publisher": "hanniel-tsasse",
@@ -52,6 +55,10 @@
       {
         "command": "agentDev.sendSelection",
         "title": "SDK Overflow : envoyer la sélection"
+      },
+      {
+        "command": "agentDev.focusInput",
+        "title": "SDK Overflow : aller dans la saisie"
       }
     ],
     "menus": {
@@ -69,6 +76,12 @@
         "key": "ctrl+alt+a",
         "mac": "cmd+alt+a",
         "when": "editorHasSelection"
+      },
+      {
+        "command": "agentDev.focusInput",
+        "key": "ctrl+escape",
+        "mac": "cmd+escape",
+        "when": "activeWebviewPanelId != 'agentDev.session'"
       }
     ],
     "configuration": {
@@ -76,7 +89,11 @@
       "properties": {
         "agentDev.model": {
           "type": "string",
-          "enum": ["sonnet", "opus", "haiku"],
+          "enum": [
+            "sonnet",
+            "opus",
+            "haiku"
+          ],
           "default": "sonnet",
           "description": "Modèle par défaut au démarrage d'une session."
         },

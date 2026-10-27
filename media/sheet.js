@@ -12,7 +12,7 @@
     window.addEventListener("keydown", (event) => {
       if (el.hidden || !current) return;
       const typing = event.target.closest && event.target.closest("input, textarea");
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !event.ctrlKey) {
         const palette = document.getElementById("palette");
         if (palette && !palette.hidden) return;
         event.preventDefault();

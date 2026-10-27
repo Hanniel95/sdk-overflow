@@ -15,6 +15,25 @@
     }, 1200);
   };
 
+  const lightbox = document.getElementById("lightbox");
+  ui.preview = (src, name) => {
+    lightbox.querySelector("img").src = src;
+    document.getElementById("lightbox-name").textContent = name || "";
+    lightbox.hidden = false;
+  };
+  const closePreview = () => {
+    lightbox.hidden = true;
+    lightbox.querySelector("img").removeAttribute("src");
+  };
+  lightbox.addEventListener("click", closePreview);
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !lightbox.hidden) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closePreview();
+    }
+  }, true);
+
   ui.initTranscript(document.getElementById("log"));
   ui.initActivity();
   ui.initSheet(document.getElementById("sheet"), vscode);
@@ -25,6 +44,11 @@
 
   document.addEventListener("click", (event) => {
     const target = event.target;
+    const thumb = target.closest("img.thumb");
+    if (thumb) {
+      ui.preview(thumb.src, thumb.alt);
+      return;
+    }
     const copyCode = target.closest(".copy-code");
     if (copyCode) {
       const code = copyCode.closest(".code")?.querySelector("pre");
@@ -145,7 +169,10 @@
         ui.addImages(msg.images || []);
         break;
       case "insert":
-        ui.insert(msg.text || "");
+        ui.insert(msg.text || "", msg.inline === true);
+        break;
+      case "focus":
+        ui.focusInput();
         break;
       case "user":
         ui.userMessage(msg.text || "", []);

@@ -5,13 +5,17 @@ import { ChatHost, ChatHooks } from "./chatHost";
 import { BEFORE_SCHEME, beforeStore } from "./snapshots";
 
 const SECRET_KEY = "agentDev.anthropicApiKey";
+const SPENT_KEY = "agentDev.spentUsd";
+const ARCHIVED_KEY = "agentDev.archivedSessions";
 const VIEW_TYPE = "agentDev.session";
+const CONSOLE_URL = "https://platform.claude.com/";
 
 interface SessionRow {
   id: string;
   title: string;
   when: number;
   open: boolean;
+  archived: boolean;
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -28,8 +32,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("agentDev.clearApiKey", () => desk.clearApiKey()),
     vscode.commands.registerCommand("agentDev.newSession", () => desk.openNew()),
     vscode.commands.registerCommand("agentDev.sendSelection", () => desk.insertSelection()),
+    vscode.commands.registerCommand("agentDev.focusInput", () => desk.focusInput()),
+    vscode.window.onDidChangeActiveTextEditor((editor) => desk.rememberEditor(editor)),
     { dispose: () => desk.dispose() },
   );
+  desk.rememberEditor(vscode.window.activeTextEditor);
 }
 
 export function deactivate(): void {
@@ -42,11 +49,61 @@ class SessionDesk implements vscode.WebviewPanelSerializer, ChatHooks {
   private list?: SessionList;
   private listToken = 0;
   private listError = "";
+  private lastEditor?: vscode.TextEditor;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
   attachList(list: SessionList): void {
     this.list = list;
+  }
+
+  rememberEditor(editor: vscode.TextEditor | undefined): void {
+    if (editor && editor.document.uri.scheme !== "output") this.lastEditor = editor;
+  }
+
+  /** Ctrl+Échap depuis l'éditeur : ouvre la saisie de la session active, ou une nouvelle session. */
+  focusInput(): void {
+    const host = this.active ?? this.openNew();
+    host?.focusInput();
+  }
+
+  /** Ctrl+Échap depuis la saisie : rend la main au dernier fichier ouvert. */
+  unfocus(): void {
+    const editor = this.lastEditor;
+    if (editor && !editor.document.isClosed) {
+      void vscode.window.showTextDocument(editor.document, { viewColumn: editor.viewColumn, preserveFocus: false });
+      return;
+    }
+    void vscode.commands.executeCommand("workbench.action.focusSideBar");
+  }
+
+  private archived(): Set<string> {
+    return new Set(this.context.globalState.get<string[]>(ARCHIVED_KEY, []));
+  }
+
+  async setArchived(id: string, value: boolean): Promise<void> {
+    const ids = this.archived();
+    if (value) ids.add(id);
+    else ids.delete(id);
+    await this.context.globalState.update(ARCHIVED_KEY, [...ids]);
+    void this.refresh();
+  }
+
+  async resetSpent(): Promise<void> {
+    await this.context.globalState.update(SPENT_KEY, 0);
+    for (const tab of this.tabs.values()) await tab.pushState();
+    void this.refresh();
+  }
+
+  private async postAccount(): Promise<void> {
+    const hasKey = Boolean(await this.context.secrets.get(SECRET_KEY));
+    this.list?.post({
+      type: "account",
+      hasKey,
+      spent: this.context.globalState.get<number>(SPENT_KEY, 0),
+      maxUsd: vscode.workspace.getConfiguration("agentDev").get<number>("maxUsd", 50),
+      consoleUrl: CONSOLE_URL,
+    });
   }
 
   onChanged(): void {
@@ -95,6 +152,7 @@ class SessionDesk implements vscode.WebviewPanelSerializer, ChatHooks {
 
   private async saveKey(raw: string): Promise<void> {
     await this.context.secrets.store(SECRET_KEY, raw.trim());
+    void this.refresh();
     for (const tab of this.tabs.values()) {
       tab.dropProcess();
       await tab.pushState();
@@ -123,6 +181,7 @@ class SessionDesk implements vscode.WebviewPanelSerializer, ChatHooks {
 
   async clearApiKey(): Promise<void> {
     await this.context.secrets.delete(SECRET_KEY);
+    void this.refresh();
     for (const tab of this.tabs.values()) {
       tab.dropProcess();
       await tab.pushState();
@@ -231,6 +290,7 @@ class SessionDesk implements vscode.WebviewPanelSerializer, ChatHooks {
 
   async refresh(): Promise<void> {
     const token = ++this.listToken;
+    void this.postAccount();
     const cwd = workspaceRoot();
     if (!cwd) {
       this.list?.post({
@@ -254,11 +314,13 @@ class SessionDesk implements vscode.WebviewPanelSerializer, ChatHooks {
     error = this.listError || error;
     this.listError = "";
     const listedIds = new Set(listed.map((info) => info.sessionId));
+    const archived = this.archived();
     const rows: SessionRow[] = listed.map((info) => ({
       id: info.sessionId,
       title: sessionTitle(info),
       when: info.lastModified,
       open: this.tabs.has(info.sessionId),
+      archived: archived.has(info.sessionId) && !this.tabs.has(info.sessionId),
     }));
     for (const row of this.openRows()) {
       if (!listedIds.has(row.id)) rows.push(row);
@@ -284,6 +346,7 @@ class SessionDesk implements vscode.WebviewPanelSerializer, ChatHooks {
       title: host.panel.title,
       when: host.touched,
       open: true,
+      archived: false,
     }));
   }
 }
@@ -313,7 +376,7 @@ class SessionList implements vscode.WebviewViewProvider {
     void this.view?.webview.postMessage(msg);
   }
 
-  private async onMessage(msg: { type?: string; id?: string }): Promise<void> {
+  private async onMessage(msg: { type?: string; id?: string; url?: string }): Promise<void> {
     switch (msg.type) {
       case "ready":
       case "refresh":
@@ -327,6 +390,24 @@ class SessionList implements vscode.WebviewViewProvider {
         break;
       case "delete":
         if (msg.id) await this.desk.deleteSession(msg.id);
+        break;
+      case "archive":
+        if (msg.id) await this.desk.setArchived(msg.id, true);
+        break;
+      case "unarchive":
+        if (msg.id) await this.desk.setArchived(msg.id, false);
+        break;
+      case "setKey":
+        await this.desk.promptApiKey();
+        break;
+      case "clearKey":
+        await this.desk.clearApiKey();
+        break;
+      case "resetSpent":
+        await this.desk.resetSpent();
+        break;
+      case "openUrl":
+        if (msg.url && /^https:\/\//.test(msg.url)) await vscode.env.openExternal(vscode.Uri.parse(msg.url));
         break;
     }
   }
@@ -345,12 +426,24 @@ class SessionList implements vscode.WebviewViewProvider {
 <title>Sessions</title>
 </head>
 <body>
-  <div class="bar">
-    <button id="new" type="button">+ Nouvelle session</button>
-    <span class="spacer"></span>
-    <button id="refresh" class="ghost" type="button" title="Recharger la liste">↻</button>
-  </div>
-  <div id="list" class="list"></div>
+  <section class="sec" id="sec-account">
+    <div class="sec-head">
+      <button type="button" class="sec-toggle" data-sec="account"><span class="chev">›</span>Compte et usage</button>
+      <button type="button" class="sec-link" id="console">Voir les détails</button>
+    </div>
+    <div class="sec-body" id="account"></div>
+  </section>
+  <section class="sec open" id="sec-sessions">
+    <div class="sec-head">
+      <button type="button" class="sec-toggle" data-sec="sessions"><span class="chev">›</span>Sessions</button>
+      <button type="button" class="sec-link icon" id="refresh" title="Recharger la liste">↻</button>
+    </div>
+    <div class="sec-body">
+      <button id="new" class="newrow" type="button"><span class="plus">+</span>Nouvelle session</button>
+      <label class="search"><span class="search-icon" aria-hidden="true">⌕</span><input id="q" type="text" placeholder="Rechercher une session…" autocomplete="off"></label>
+      <div id="list" class="list"></div>
+    </div>
+  </section>
   <script nonce="${nonce}" src="${media("sessions.js")}"></script>
 </body>
 </html>`;
