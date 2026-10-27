@@ -1,0 +1,105 @@
+:root { --radius: 8px; --accent: #d97757; }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; padding: 0; }
+
+body {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background);
+}
+
+button { font: inherit; cursor: pointer; }
+
+.bar {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--vscode-widget-border, transparent);
+}
+
+.bar button {
+  border: none;
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  color: #fff;
+  background: var(--accent);
+  font-weight: 600;
+}
+.bar button:hover { filter: brightness(1.08); }
+.bar #new { flex: 1; }
+.bar button.ghost {
+  color: var(--vscode-foreground);
+  background: transparent;
+  border: 1px solid var(--vscode-widget-border, transparent);
+}
+.bar button.ghost:hover { background: var(--vscode-toolbar-hoverBackground); }
+.bar .spacer { display: none; }
+
+.list { overflow: auto; padding: 6px; }
+
+.hint {
+  margin: 8px 4px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.4;
+}
+.hint.err { color: var(--vscode-errorForeground); }
+
+.session {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  margin-bottom: 2px;
+}
+
+.session .open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  color: var(--vscode-foreground);
+  background: transparent;
+}
+.session .open:hover,
+.session.open .open { background: var(--vscode-list-hoverBackground); }
+.session.open .open { box-shadow: inset 2px 0 0 var(--accent); }
+.session .del { opacity: 0; }
+.session:hover .del, .session .del:focus-visible, .session .del.armed { opacity: 1; }
+
+.stitle {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.smeta {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+}
+
+.del {
+  flex: none;
+  align-self: center;
+  width: 28px;
+  border: none;
+  border-radius: var(--radius);
+  padding: 4px 0;
+  color: var(--vscode-descriptionForeground);
+  background: transparent;
+}
+.del:hover { background: var(--vscode-toolbar-hoverBackground); color: var(--vscode-foreground); }
+.del.armed {
+  width: auto;
+  padding: 4px 8px;
+  color: var(--vscode-errorForeground);
+  background: var(--vscode-inputValidation-errorBackground, transparent);
+}
