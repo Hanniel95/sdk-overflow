@@ -1,4 +1,4 @@
-<p align="center"><img src="media/logo.svg" alt="SDK Overflow" width="112" height="112"></p>
+<p align="center"><img src="media/logo.png" alt="SDK Overflow" width="112" height="112"></p>
 
 # SDK Overflow
 

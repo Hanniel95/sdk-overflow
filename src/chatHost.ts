@@ -15,6 +15,9 @@ import {
 
 const SECRET_KEY = "agentDev.anthropicApiKey";
 const SPENT_KEY = "agentDev.spentUsd";
+/** Dernier coût cumulé vu par session : le SDK renvoie un total qui inclut les tours déjà enregistrés. */
+const COSTS_KEY = "agentDev.sessionCosts";
+const MAX_TRACKED_SESSIONS = 300;
 const IMAGE_TYPES: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -66,6 +69,7 @@ export class ChatHost {
     this.resumeId = resumeId;
     this.modelKey = vscode.workspace.getConfiguration("agentDev").get("model", "sonnet");
     const media = vscode.Uri.joinPath(this.context.extensionUri, "media");
+    panel.iconPath = vscode.Uri.joinPath(media, "logo.svg");
     panel.webview.options = { enableScripts: true, localResourceRoots: [media] };
     panel.webview.html = this.html(panel.webview);
     const subs = [
@@ -378,12 +382,21 @@ export class ChatHost {
     }
     if (event.type === "result") {
       this.touched = Date.now();
-      if (event.delta > 0) {
+      const delta = this.costDelta(event.sessionId, event.cumulative, event.resumedFirst);
+      if (delta > 0) {
         void this.context.globalState
-          .update(SPENT_KEY, this.spent + event.delta)
+          .update(SPENT_KEY, this.spent + delta)
           .then(() => this.pushState());
       }
       this.hooks.onChanged();
+      this.post({
+        type: "result",
+        delta,
+        turns: event.turns,
+        isError: event.isError,
+        error: event.error,
+      });
+      return;
     }
     if (event.type === "effort") {
       this.effort = event.effort;
@@ -403,6 +416,28 @@ export class ChatHost {
     }
     this.post(event);
     if (event.type === "mode") void this.pushState();
+  }
+
+  /**
+   * Dépense du tour = écart entre le cumul actuel de la session et le dernier cumul vu pour elle.
+   * Une session reprise repart du total déjà sauvegardé : sans mémoire de ce total, on le
+   * recompterait en entier à chaque réouverture. Sans cumul connu pour une session reprise
+   * (ouverte avant ce correctif), le premier résultat sert de point de départ et n'ajoute rien.
+   */
+  private costDelta(sessionId: string | undefined, cumulative: number, resumedFirst: boolean): number {
+    const id = sessionId || this.resumeId;
+    if (!id) return 0;
+    const costs = { ...this.context.globalState.get<Record<string, number>>(COSTS_KEY, {}) };
+    const known = costs[id];
+    let delta: number;
+    if (known === undefined) delta = resumedFirst ? 0 : cumulative;
+    else delta = cumulative >= known ? cumulative - known : cumulative;
+    delete costs[id];
+    costs[id] = cumulative;
+    const ids = Object.keys(costs);
+    for (const old of ids.slice(0, Math.max(0, ids.length - MAX_TRACKED_SESSIONS))) delete costs[old];
+    void this.context.globalState.update(COSTS_KEY, costs);
+    return Math.max(0, delta);
   }
 
   private adopt(id: string): void {

@@ -155,7 +155,17 @@ export type UiEvent =
   | { type: "blockPatch"; id: string; patch: BlockPatch }
   | { type: "toolResult"; id: string; output: string; isError: boolean; edit?: EditInfo; before?: string | null }
   | { type: "toolProgress"; id: string; elapsed: number }
-  | { type: "result"; delta: number; turns: number; isError: boolean; error?: string }
+  | {
+      type: "result";
+      /** Coût cumulé de la session selon le SDK (estimation, pas une facture). */
+      cumulative: number;
+      sessionId?: string;
+      /** Premier résultat d'une session reprise : le cumul contient déjà les tours précédents. */
+      resumedFirst: boolean;
+      turns: number;
+      isError: boolean;
+      error?: string;
+    }
   | { type: "busy"; value: boolean }
   | { type: "error"; text: string }
   | { type: "notice"; text: string }
@@ -265,7 +275,7 @@ export class AgentSession {
   private queue = new MessageQueue();
   private query?: Query;
   private alive = false;
-  private lastCumulativeCost = 0;
+  private resultsSeen = 0;
   private messageId = "stream";
   private seq: Slot[] = [];
   private partialJson = new Map<string, string>();
@@ -708,9 +718,17 @@ export class AgentSession {
   }
 
   private onResult(msg: Extract<SDKMessage, { type: "result" }>): void {
-    const cumulative = msg.total_cost_usd ?? this.lastCumulativeCost;
-    const delta = Math.max(0, cumulative - this.lastCumulativeCost);
-    this.lastCumulativeCost = cumulative;
+    // total_cost_usd est cumulatif pour la session. Une session reprise repart du total déjà
+    // enregistré : l'hôte en déduit l'écart, ici on ne fait que transmettre le cumul.
+    const cumulative = typeof msg.total_cost_usd === "number" ? msg.total_cost_usd : 0;
+    const resumedFirst = this.resultsSeen === 0 && Boolean(this.config.resume);
+    this.resultsSeen += 1;
+    if (Object.values(msg.modelUsage ?? {}).some((usage) => usage.costBasis === "unknown")) {
+      this.emit({
+        type: "notice",
+        text: "Le tarif de ce modèle est inconnu du SDK : le coût affiché est une approximation.",
+      });
+    }
     let error: string | undefined;
     if (msg.subtype !== "success") {
       error = msg.errors?.join(" ") || msg.subtype;
@@ -718,7 +736,15 @@ export class AgentSession {
       error = msg.result || msg.terminal_reason || "erreur API";
     }
     this.finishTurn();
-    this.emit({ type: "result", delta, turns: msg.num_turns, isError: msg.is_error, error });
+    this.emit({
+      type: "result",
+      cumulative,
+      sessionId: msg.session_id,
+      resumedFirst,
+      turns: msg.num_turns,
+      isError: msg.is_error,
+      error,
+    });
     this.emit({ type: "busy", value: false });
     this.emit({ type: "status", text: null });
     void this.refreshContext();
