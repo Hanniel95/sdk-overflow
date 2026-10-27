@@ -443,17 +443,28 @@ export class ChatHost {
 
   private async openFile(filePath: string, line?: number): Promise<void> {
     if (!filePath) return;
-    const target = path.isAbsolute(filePath) ? filePath : path.join(this.cwd, filePath);
+    const uri = vscode.Uri.file(this.absolute(filePath));
     try {
-      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(target));
-      const editor = await vscode.window.showTextDocument(doc, { preview: true });
-      if (line && line > 0) {
-        const pos = new vscode.Position(line - 1, 0);
-        editor.selection = new vscode.Selection(pos, pos);
-        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
-      }
+      await vscode.workspace.fs.stat(uri);
     } catch {
-      this.post({ type: "notice", text: `Impossible d'ouvrir ${filePath}` });
+      void vscode.window.showWarningMessage(
+        `${path.basename(uri.fsPath)} n'existe plus : l'agent l'a probablement supprimé (fichier temporaire).`,
+      );
+      return;
+    }
+    let doc: vscode.TextDocument;
+    try {
+      doc = await vscode.workspace.openTextDocument(uri);
+    } catch {
+      // Image, PDF ou autre binaire : l'éditeur choisit sa propre vue.
+      await vscode.commands.executeCommand("vscode.open", uri, { preview: true });
+      return;
+    }
+    const editor = await vscode.window.showTextDocument(doc, { preview: true });
+    if (line && line > 0) {
+      const pos = new vscode.Position(line - 1, 0);
+      editor.selection = new vscode.Selection(pos, pos);
+      editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
     }
   }
 

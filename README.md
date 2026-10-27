@@ -1,3 +1,5 @@
+<p align="center"><img src="media/logo.svg" alt="SDK Overflow" width="112" height="112"></p>
+
 # SDK Overflow
 
 Extension Cursor (compatible VS Code) qui ajoute un agent de code basé sur le Claude Agent SDK. Elle utilise une clé API de la Claude Console : l'usage est facturé sur ton compte Console (ou sur un crédit Agent SDK si ton organisation en a un), pas sur un abonnement claude.ai.
@@ -51,7 +53,7 @@ npm install
 npm run package
 ```
 
-Cela produit `sdk-overflow-0.1.3.vsix`. Dans Cursor :
+Cela produit `sdk-overflow-0.1.4.vsix`. Dans Cursor :
 
 1. Ouvre la palette de commandes (Ctrl+Shift+P, ou Cmd+Shift+P sur Mac).
 2. Lance « Extensions: Install from VSIX… » et choisis le fichier `.vsix`.

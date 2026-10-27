@@ -287,7 +287,7 @@ export class AgentSession {
     const env: Record<string, string | undefined> = {
       ...process.env,
       ANTHROPIC_API_KEY: this.config.apiKey,
-      CLAUDE_AGENT_SDK_CLIENT_APP: "sdk-overflow/0.1.3",
+      CLAUDE_AGENT_SDK_CLIENT_APP: "sdk-overflow/0.1.4",
     };
     delete env.CLAUDE_CODE_OAUTH_TOKEN;
     delete env.ANTHROPIC_AUTH_TOKEN;

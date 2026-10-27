@@ -1,9 +1,10 @@
 {
   "name": "sdk-overflow",
   "displayName": "SDK Overflow (Claude Agent SDK)",
+  "icon": "media/logo.png",
   "repository": { "type": "git", "url": "https://github.com/Hanniel95/sdk-overflow" },
   "description": "Agent de code dans Cursor / VS Code, propulsé par le Claude Agent SDK et une clé API de la Claude Console.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "hanniel-tsasse",
   "author": "Hanniel TSASSE",
   "license": "MIT",
